@@ -5,40 +5,45 @@ import (
 	"net/http"
 	"log"
 	"io"
+	"io/ioutil"
 	"golang.org/x/text/encoding/charmap"
 )
 
-func jsonMaker (runeCh <-chan rune, errorCount *uint32, doneCh chan<- bool) {
-	<- runeCh
+func jsonMaker (r *io.PipeReader, errorCount *uint32, doneCh chan <- bool) {
+
+	_,_ = ioutil.ReadAll (r)
 	*errorCount += 1
 	doneCh <- true
 }
 
 func jsonHandler (w http.ResponseWriter, r *http.Request) {
-	var runeCh = make (chan rune, 20)
 	var doneCh = make (chan bool)
-
 	var errorCount uint32 = 0
+	piper, pipew := io.Pipe ()
 
-	go jsonMaker (runeCh, &errorCount, doneCh)
+	go jsonMaker (piper, &errorCount, doneCh)
 
+	decoder := charmap.Windows1251.NewDecoder ()
+	reader := decoder.Reader (r.Body)
+
+	var bytes = make ([]byte, 64)
 	for {
-		var bytes = make ([]byte, 16)
-		n, err := r.Body.Read (bytes);
+		_, err := reader.Read (bytes)
 
-		for i := 0; i < n; i += 1 {
-			runeCh <- charmap.Windows1251.DecodeByte (bytes[i])
-		}
+		pipew.Write (bytes)
 
 		if err != nil {
-
 			if err != io.EOF {
+
 				fmt.Printf ("%s\n", err.Error ())
 			}
 
+			pipew.Close ()
 			break
 		}
 	}
+
+	fmt.Println ("bytes perfoming excecuted")
 
 	<- doneCh
 
